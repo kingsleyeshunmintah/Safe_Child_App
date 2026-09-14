@@ -39,6 +39,21 @@ const exportStudentsCsv = (students: RecordData[]) => {
   link.remove();
   URL.revokeObjectURL(url);
 };
+const exportAttendanceCsv = (records: RecordData[]) => {
+  const columns = ['attendanceDate', 'studentName', 'grade', 'teacherName', 'teacherEmail', 'guardianName', 'status', 'note'];
+  const csv = [
+    columns.map(fieldLabel).map(csvCell).join(','),
+    ...records.map((record) => columns.map((column) => csvCell(record[column])).join(','))
+  ].join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `safe-child-attendance-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return <div className="modal-layer" role="dialog"><div className="modal"><div className="modal-heading"><div><p className="eyebrow">DATA MANAGEMENT</p><h3>{title}</h3></div><button className="icon-button" onClick={onClose}><X size={19} /></button></div>{children}</div></div>;
@@ -152,11 +167,25 @@ export function AnnouncementsManagement() {
 function AnnouncementModal({ record, onClose }: { record?: RecordData; onClose: () => void }) { const [form, setForm] = useState({ title: String(record?.title || ''), body: String(record?.body || ''), category: String(record?.category || 'General') }); const [busy, setBusy] = useState(false); const save = async () => { if (!form.title.trim() || !form.body.trim()) return; setBusy(true); try { if (record) await updateRecord('announcements', record.id, form); else await createRecord('announcements', { ...form, date: new Date().toISOString() }); onClose(); } catch { setBusy(false); } }; return <Modal title={record ? 'Edit announcement' : 'Add announcement'} onClose={onClose}><Field label="Title" value={form.title} onChange={(value) => setForm({ ...form, title: value })} /><label>Category<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>General</option><option>Urgent</option><option>Events</option><option>Academic</option></select></label><label>Message<textarea value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} rows={7} /></label><SaveBar busy={busy} onCancel={onClose} onSave={save} /></Modal>; }
 
 export function AttendanceManagement() {
-  const [records, setRecords] = useState<RecordData[]>([]); const [students, setStudents] = useState<RecordData[]>([]); const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); const [error, setError] = useState('');
-  useEffect(() => onSnapshot(collection(db, 'students'), (snapshot) => setStudents(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as RecordData)))), []);
+  const today = new Date().toISOString().slice(0, 10);
+  const [records, setRecords] = useState<RecordData[]>([]); const [students, setStudents] = useState<RecordData[]>([]); const [users, setUsers] = useState<RecordData[]>([]); const [mode, setMode] = useState<'day' | 'range'>('day'); const [date, setDate] = useState(today); const [startDate, setStartDate] = useState(today); const [endDate, setEndDate] = useState(today); const [teacher, setTeacher] = useState(''); const [grade, setGrade] = useState(''); const [error, setError] = useState('');
+  useEffect(() => onSnapshot(collection(db, 'students'), (snapshot) => setStudents(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as RecordData))), (e) => setError(e.message)), []);
+  useEffect(() => onSnapshot(collection(db, 'users'), (snapshot) => setUsers(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as RecordData))), (e) => setError(e.message)), []);
   useEffect(() => onSnapshot(collection(db, 'attendance'), (snapshot) => setRecords(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as RecordData))), (e) => setError(e.message)), []);
-  const visible = records.filter((record) => String(record.attendanceDate || '').slice(0, 10) === date).map((record) => { const student = students.find((item) => item.id === record.studentId); return { ...record, studentName: record.studentName || `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Unknown student', grade: record.grade || student?.grade || '—', guardianName: record.guardianName || student?.guardianName || '—' }; });
-  return <ManagementLayout title="Attendance" subtitle="Review daily attendance records and filter by date."><div className="management-actions"><label className="date-filter">Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label></div>{error && <div className="notice error">{error}</div>}<section className="panel table-panel"><Table headers={['studentName', 'grade', 'guardianName', 'status', 'note']} rows={visible} renderActions={() => <span className="muted">Read only</span>} />{!visible.length && <div className="empty"><p>No attendance records for {date}.</p></div>}</section></ManagementLayout>;
+  const teachers = users.filter((user) => user.role === 'teacher');
+  const grades = [...new Set(students.map((student) => String(student.grade || '')).filter(Boolean))].sort();
+  const rows = records.map((record) => {
+    const student = students.find((item) => item.id === record.studentId);
+    const teacherEmail = String(record.teacherEmail || student?.teacherEmail || '').toLowerCase();
+    const teacherRecord = teachers.find((item) => String(item.email || '').toLowerCase() === teacherEmail || item.id === student?.teacherUid);
+    return { ...record, attendanceDate: String(record.attendanceDate || '').slice(0, 10), studentName: record.studentName || `${student?.firstName || ''} ${student?.lastName || ''}`.trim() || 'Unknown student', grade: record.grade || student?.grade || '—', guardianName: record.guardianName || student?.guardianName || '—', teacherName: record.teacherName || student?.teacherName || teacherRecord?.displayName || '—', teacherEmail: teacherEmail || String(teacherRecord?.email || '') };
+  }).filter((record) => {
+    const inDates = mode === 'day' ? record.attendanceDate === date : record.attendanceDate >= startDate && record.attendanceDate <= endDate;
+    const teacherMatch = !teacher || record.teacherEmail === teacher.toLowerCase();
+    const gradeMatch = !grade || record.grade === grade;
+    return inDates && teacherMatch && gradeMatch;
+  }).sort((a, b) => String(b.attendanceDate).localeCompare(String(a.attendanceDate)));
+  return <ManagementLayout title="Attendance" subtitle="Export attendance for a day or date range by teacher and grade."><div className="attendance-filters"><label>View<select value={mode} onChange={(event) => setMode(event.target.value as 'day' | 'range')}><option value="day">Single day</option><option value="range">Date range</option></select></label>{mode === 'day' ? <label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label> : <><label>From<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>To<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label></>}<label>Teacher<select value={teacher} onChange={(event) => setTeacher(event.target.value)}><option value="">All teachers</option>{teachers.map((item) => <option key={item.id} value={String(item.email || '').toLowerCase()}>{String(item.displayName || item.email)}</option>)}</select></label><label>Grade<select value={grade} onChange={(event) => setGrade(event.target.value)}><option value="">All grades</option>{grades.map((item) => <option key={item}>{item}</option>)}</select></label><button className="primary" onClick={() => exportAttendanceCsv(rows)} disabled={!rows.length}>Export CSV</button></div>{error && <div className="notice error">{error}</div>}<section className="panel table-panel"><Table headers={['attendanceDate', 'studentName', 'grade', 'teacherName', 'guardianName', 'status', 'note']} rows={rows} renderActions={() => <span className="muted">Read only</span>} />{!rows.length && <div className="empty"><p>No attendance records match these filters.</p></div>}</section></ManagementLayout>;
 }
 function ClassModal({ record, teachers, onClose }: { record?: RecordData; teachers: RecordData[]; onClose: () => void }) { const [form, setForm] = useState({ name: String(record?.name || ''), grade: String(record?.grade || ''), teacherEmail: String(record?.teacherEmail || ''), teacherUid: String(record?.teacherUid || ''), teacherName: String(record?.teacherName || '') }); const [busy, setBusy] = useState(false); const save = async () => { setBusy(true); try { const teacher = teachers.find((item) => String(item.email || '').toLowerCase() === form.teacherEmail.toLowerCase()); const fields = { ...form, teacherUid: String(teacher?.id || form.teacherUid || ''), teacherName: teacher?.displayName || form.teacherName }; if (record) await updateRecord('classes', record.id, fields); else await createRecord('classes', fields); onClose(); } catch { setBusy(false); } }; return <Modal title={record ? 'Edit grade class' : 'Create grade class'} onClose={onClose}><Field label="Class name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} /><Field label="Grade" value={form.grade} onChange={(value) => setForm({ ...form, grade: value })} /><label>Teacher<select value={form.teacherEmail} onChange={(event) => { const teacherEmail = event.target.value; const teacher = teachers.find((item) => String(item.email || '').toLowerCase() === teacherEmail.toLowerCase()); setForm({ ...form, teacherEmail, teacherUid: String(teacher?.id || ''), teacherName: String(teacher?.displayName || '') }); }}><option value="">Select teacher</option>{teachers.map((teacher) => <option key={teacher.id} value={String(teacher.email || '')}>{String(teacher.displayName || teacher.email)}</option>)}</select></label><SaveBar busy={busy} onCancel={onClose} onSave={save} /></Modal>; }
 

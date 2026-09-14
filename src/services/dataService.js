@@ -77,6 +77,23 @@ export const subscribeStudentsForUser = (callback, userProfile) => {
   if (userProfile?.role !== 'parent') return subscribeStudents(callback);
   return subscribeCollection('students', callback, [where('guardianEmail', '==', userProfile.email)]);
 };
+export const subscribeClassesForUser = (callback, userProfile) => {
+  if (!userProfile) {
+    callback([]);
+    return () => {};
+  }
+  if (userProfile.role === 'teacher') {
+    let byUid = [];
+    let byEmail = [];
+    const publish = () => callback([...byUid, ...byEmail].filter((item, index, list) => list.findIndex((entry) => entry.id === item.id) === index));
+    const unsubscribeUid = subscribeCollection('classes', (records) => { byUid = records; publish(); }, [where('teacherUid', '==', auth.currentUser.uid)]);
+    const unsubscribeEmail = subscribeCollection('classes', (records) => { byEmail = records; publish(); }, [where('teacherEmail', '==', userProfile.email)]);
+    return () => { unsubscribeUid(); unsubscribeEmail(); };
+  }
+  if (userProfile.role === 'admin') return subscribeCollection('classes', callback);
+  callback([]);
+  return () => {};
+};
 export const addStudentRecord = (data) => addRecord('students', data);
 export const updateStudentRecord = (id, data) => updateRecord('students', id, data);
 export const deleteStudentRecord = async (id) => deleteDoc(doc(requireDatabase(), 'students', id));

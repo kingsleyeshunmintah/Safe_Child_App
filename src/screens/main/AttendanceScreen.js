@@ -19,8 +19,6 @@ import { useAuth } from '../../context/AuthContext';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system';
 
-const GRADES = ['All', 'Grade 1A', 'Grade 2A', 'Grade 3C', 'Grade 4B'];
-
 const toDateKey = (date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -46,6 +44,7 @@ export const AttendanceScreen = () => {
   const [exportStartDate, setExportStartDate] = useState(toDateKey(new Date()));
   const [exportEndDate, setExportEndDate] = useState(toDateKey(new Date()));
   const [exporting, setExporting] = useState(false);
+  const grades = ['All', ...new Set(roster.map((student) => student.grade).filter(Boolean))];
 
   // Note Modal State
   const [activeNoteStudent, setActiveNoteStudent] = useState(null);
@@ -266,7 +265,7 @@ export const AttendanceScreen = () => {
         />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <TouchableOpacity
               key={g}
               style={[styles.gradeChip, selectedGrade === g && styles.gradeChipActive]}

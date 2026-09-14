@@ -20,12 +20,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import { subscribeStudentsForUser, addStudentRecord, updateStudentRecord, deleteStudentRecord, getConnectedChildren } from '../../services/dataService';
-
-const GRADES = ['All', 'My Children', 'Grade 1A', 'Grade 2A', 'Grade 3C', 'Grade 4B'];
+import { subscribeStudentsForUser, subscribeClassesForUser, addStudentRecord, updateStudentRecord, deleteStudentRecord, getConnectedChildren } from '../../services/dataService';
 
 export const StudentRegistryScreen = ({ navigation }) => {
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
   const userRole = userProfile?.role || null;
 
   const [students, setStudents] = useState([]);
@@ -36,12 +34,14 @@ export const StudentRegistryScreen = ({ navigation }) => {
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [grade, setGrade] = useState('Grade 4B');
+  const [grade, setGrade] = useState('');
   const [guardianName, setGuardianName] = useState(userProfile?.displayName || '');
   const [guardianEmail, setGuardianEmail] = useState(userProfile?.email || '');
   const [guardianPhone, setGuardianPhone] = useState('');
   const [teacherName, setTeacherName] = useState('Mr. Joshua Ofori');
   const [teacherEmail, setTeacherEmail] = useState('');
+  const [classes, setClasses] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
   const [studentPhotoUri, setStudentPhotoUri] = useState(null);
   const [loading, setLoading] = useState(false);
   const [assignmentLoading, setAssignmentLoading] = useState(false);
@@ -53,6 +53,7 @@ export const StudentRegistryScreen = ({ navigation }) => {
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportSubject, setReportSubject] = useState('Safe Child student update');
   const [reportBody, setReportBody] = useState('');
+  const grades = ['All', ...(userRole === 'parent' ? ['My Children'] : []), ...new Set(students.map((student) => student.grade).filter(Boolean))];
 
   // Open add modal and ensure guardian details are auto-filled for parent
   const handleOpenAddModal = () => {
@@ -216,6 +217,11 @@ export const StudentRegistryScreen = ({ navigation }) => {
     return () => unsubscribe();
   }, [userProfile]);
 
+  useEffect(() => {
+    const unsubscribe = subscribeClassesForUser(setClasses, userProfile);
+    return () => unsubscribe();
+  }, [userProfile]);
+
   const handlePickStudentPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -243,6 +249,15 @@ export const StudentRegistryScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
+      const currentTeacher = userRole === 'teacher' ? {
+        teacherUid: user?.uid || '',
+        teacherEmail: (user?.email || userProfile?.email || '').trim().toLowerCase(),
+        teacherName: userProfile?.displayName || user?.displayName || teacherName.trim()
+      } : {
+        teacherUid: '',
+        teacherEmail: teacherEmail.trim().toLowerCase(),
+        teacherName: teacherName.trim()
+      };
       const newStudentData = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -250,8 +265,9 @@ export const StudentRegistryScreen = ({ navigation }) => {
         guardianName: guardianName.trim(),
         guardianEmail: guardianEmail.trim() || userProfile?.email || '',
         guardianPhone: guardianPhone.trim(),
-        teacherName: teacherName.trim(),
-        teacherEmail: teacherEmail.trim().toLowerCase(),
+        ...currentTeacher,
+        classId: selectedClassId,
+        className: classes.find((item) => item.id === selectedClassId)?.name || '',
         status: 'Active',
         photoUri: studentPhotoUri,
         attendanceRate: '100%',
@@ -265,6 +281,7 @@ export const StudentRegistryScreen = ({ navigation }) => {
       setFirstName('');
       setLastName('');
       setTeacherEmail('');
+      setSelectedClassId('');
       setStudentPhotoUri(null);
 
       Alert.alert('Student Saved to Database', `${newStudentData.firstName} ${newStudentData.lastName} has been registered and connected to your profile.`);
@@ -368,7 +385,7 @@ export const StudentRegistryScreen = ({ navigation }) => {
 
         {/* Grade Filter Chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <TouchableOpacity
               key={g}
               style={[styles.gradeChip, selectedGrade === g && styles.gradeChipActive]}
@@ -471,6 +488,28 @@ export const StudentRegistryScreen = ({ navigation }) => {
                 placeholder="e.g. Grade 4B"
                 iconName="school-outline"
               />
+
+              {userRole === 'teacher' && classes.length > 0 && (
+                <View style={styles.classPickerBlock}>
+                  <Text style={styles.photoUploadLabel}>Assigned Class</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {classes.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.classChip, selectedClassId === item.id && styles.classChipActive]}
+                        onPress={() => {
+                          setSelectedClassId(item.id);
+                          if (item.grade) setGrade(item.grade);
+                        }}
+                      >
+                        <Text style={[styles.classChipText, selectedClassId === item.id && styles.classChipTextActive]}>
+                          {item.name || item.grade || item.id}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
               <InputField
                 label="Guardian Full Name"
@@ -949,6 +988,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textPrimary,
     marginBottom: SPACING.xs,
+  },
+  classPickerBlock: {
+    marginBottom: SPACING.md,
+  },
+  classChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: RADIUS.full,
+    marginRight: SPACING.xs,
+    backgroundColor: COLORS.white,
+  },
+  classChipActive: {
+    backgroundColor: COLORS.safetyBlue,
+    borderColor: COLORS.safetyBlue,
+  },
+  classChipText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  classChipTextActive: {
+    color: COLORS.white,
   },
   uploadArea: {
     height: 80,
