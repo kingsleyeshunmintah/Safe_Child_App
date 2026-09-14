@@ -8,11 +8,17 @@
 **Safe Child** (also branded under Educal Complex) is a web application engineered for educational institutions, campus security teams, teachers, and parents. The platform bridges the gap between educational administration and child security by managing student rosters, automating secure multi-stage pickup verification, tracking daily attendance, reporting security incidents, managing network security policies, and maintaining immutable audit logging.
 
 ---
-## Install
-<img width="230" height="271" alt="image" src="https://github.com/user-attachments/assets/29806002-35f7-400b-89e1-5887c2f9ca0a" />
+## Installation for android
+<img width="229" height="266" alt="image" src="https://github.com/user-attachments/assets/878f188d-8c69-4908-aca0-f9ffe9a0dba1" />
 
+## version 1
 https://expo.dev/accounts/ecodelabs/projects/safe-child-app/builds/c74e286d-d59b-4090-9530-54045cda2294
 
+## version 2
+https://expo.dev/accounts/ecodelabs/projects/safe-child-app/builds/81596034-ba3b-4965-b043-3bdf6b3e6377
+
+## Admin web portal
+https://safe-child-app.vercel.app/
 ---
 
 ##  Table of Contents
