@@ -64,7 +64,15 @@ export const subscribeStudentsForUser = (callback, userProfile) => {
     return () => {};
   }
   if (userProfile?.role === 'teacher') {
-    return subscribeCollection('students', callback, [where('teacherEmail', '==', userProfile.email)]);
+    let byUid = [];
+    let byEmail = [];
+    const publish = () => {
+      const records = [...byUid, ...byEmail].filter((student, index, list) => list.findIndex((item) => item.id === student.id) === index);
+      callback(records);
+    };
+    const unsubscribeUid = subscribeCollection('students', (records) => { byUid = records; publish(); }, [where('teacherUid', '==', auth.currentUser.uid)]);
+    const unsubscribeEmail = subscribeCollection('students', (records) => { byEmail = records; publish(); }, [where('teacherEmail', '==', userProfile.email)]);
+    return () => { unsubscribeUid(); unsubscribeEmail(); };
   }
   if (userProfile?.role !== 'parent') return subscribeStudents(callback);
   return subscribeCollection('students', callback, [where('guardianEmail', '==', userProfile.email)]);
@@ -114,6 +122,8 @@ export const subscribeAttendance = (callback, userProfile, attendanceDate) => {
   }
 
   let students = [];
+  let teacherStudents = [];
+  let teacherEmailStudents = [];
   let attendance = [];
   const date = attendanceDate || new Date().toISOString().slice(0, 10);
   const publish = () => {
@@ -136,10 +146,17 @@ export const subscribeAttendance = (callback, userProfile, attendanceDate) => {
       };
     }));
   };
-  const studentFilters = userProfile?.role === 'teacher'
-    ? [where('teacherEmail', '==', userProfile.email)]
-    : [];
-  const unsubscribeStudents = subscribeCollection('students', (records) => { students = records; publish(); }, studentFilters);
+  const unsubscribeStudents = userProfile?.role === 'teacher'
+    ? (() => {
+      const publishTeacherStudents = () => {
+        students = [...teacherStudents, ...teacherEmailStudents].filter((student, index, list) => list.findIndex((item) => item.id === student.id) === index);
+        publish();
+      };
+      const unsubscribeUid = subscribeCollection('students', (records) => { teacherStudents = records; publishTeacherStudents(); }, [where('teacherUid', '==', auth.currentUser.uid)]);
+      const unsubscribeEmail = subscribeCollection('students', (records) => { teacherEmailStudents = records; publishTeacherStudents(); }, [where('teacherEmail', '==', userProfile.email)]);
+      return () => { unsubscribeUid(); unsubscribeEmail(); };
+    })()
+    : subscribeCollection('students', (records) => { students = records; publish(); });
   const unsubscribeAttendance = subscribeCollection('attendance', (records) => { attendance = records; publish(); }, [where('attendanceDate', '==', date)]);
   return () => { unsubscribeStudents(); unsubscribeAttendance(); };
 };
